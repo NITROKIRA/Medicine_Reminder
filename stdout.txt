@@ -1,0 +1,4 @@
+Loaded 1 user(s) from database/logincredentials.txt
+Loaded data for 1 patient(s) from database
+Medicine Reminder Server started at http://localhost:8080
+Data stored in: D:\ollama\Smart_Medicine_Reminder\database\logincredentials.txt

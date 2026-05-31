@@ -13,6 +13,18 @@
             <h1>Medicine Reminder</h1>
             <h2>Medication Reminders</h2>
 
+            <div id="reminderAlerts"></div>
+
+            <div class="phone-section">
+                <h3>Phone Notification Settings</h3>
+                <div class="phone-form-row">
+                    <input type="tel" id="phoneNumber" placeholder="Enter phone number (e.g. +1234567890)">
+                    <button onclick="savePhone()">Save Phone</button>
+                </div>
+                <p class="hint" id="phoneStatus"></p>
+                <p class="hint">Browser notifications and sound alerts will work on desktop &amp; mobile.</p>
+            </div>
+
             <div class="add-med-section">
                 <h3>Add New Medicine</h3>
                 <form id="medForm" class="med-form">
@@ -57,7 +69,14 @@
                 <p class="error" id="medError"></p>
             </div>
 
-            <h3 style="text-align:center;color:#444;font-size:16px;margin-bottom:16px">Your Medicines</h3>
+            <div class="upcoming-section">
+                <h3>Today's Upcoming Reminders</h3>
+                <div id="upcomingReminders">
+                    <p style="color:#888;font-size:14px;text-align:center">Loading...</p>
+                </div>
+            </div>
+
+            <h3 style="text-align:center;color:#444;font-size:16px;margin-bottom:16px">All Medicines</h3>
             <div id="medList" class="med-list"></div>
 
             <div class="report-actions" style="margin-top:16px">
@@ -75,6 +94,7 @@
                     return;
                 }
                 renderMedicines(data.medicines);
+                renderUpcomingReminders(data.medicines, 'upcomingReminders');
             } catch (err) {
                 window.location.href = '/index.html';
             }
@@ -157,8 +177,87 @@
             fetch('/api/logout').then(() => { window.location.href = '/index.html'; });
         }
 
+        async function loadPhone() {
+            try {
+                const res = await fetch('/api/phone');
+                const data = await res.json();
+                if (data.success && data.phone) {
+                    document.getElementById('phoneNumber').value = data.phone;
+                }
+            } catch (e) {}
+        }
+
+        async function savePhone() {
+            const phone = document.getElementById('phoneNumber').value.trim();
+            const status = document.getElementById('phoneStatus');
+            const res = await fetch('/api/phone', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'phone=' + encodeURIComponent(phone)
+            });
+            const data = await res.json();
+            status.textContent = data.success ? 'Phone number saved!' : 'Failed to save phone number.';
+            status.style.color = data.success ? '#2e7d32' : '#c62828';
+            setTimeout(() => { status.textContent = ''; }, 3000);
+        }
+
+        function getTimeStatus(timeOfDay) {
+            if (!timeOfDay) return { label: 'No time set', cls: 'status-unscheduled', urgent: false };
+            var parts = timeOfDay.split(':');
+            var medMin = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+            var now = new Date();
+            var nowMin = now.getHours() * 60 + now.getMinutes();
+            var diff = medMin - nowMin;
+
+            if (diff < 0) return { label: 'Missed', cls: 'status-missed', urgent: true };
+            if (diff === 0) return { label: 'Due Now', cls: 'status-due', urgent: true };
+            if (diff <= 15) return { label: 'Due in ' + diff + 'm', cls: 'status-due', urgent: true };
+            if (diff < 60) return { label: 'In ' + diff + 'm', cls: 'status-upcoming', urgent: false };
+            var h = Math.floor(diff / 60);
+            var m = diff % 60;
+            return { label: h + 'h ' + m + 'm left', cls: 'status-scheduled', urgent: false };
+        }
+
+        function renderUpcomingReminders(medicines, containerId) {
+            var container = document.getElementById(containerId);
+            if (!medicines || medicines.length === 0) {
+                container.innerHTML = '<div class="reminder-empty">No medicines added yet.</div>';
+                return;
+            }
+
+            var withTime = medicines.filter(function(m) { return m.timeOfDay; });
+            var withoutTime = medicines.filter(function(m) { return !m.timeOfDay; });
+            withTime.sort(function(a, b) { return a.timeOfDay.localeCompare(b.timeOfDay); });
+
+            var allMeds = withTime.concat(withoutTime);
+
+            container.innerHTML = allMeds.map(function(m) {
+                var taken = !(m.active === 'true' || m.active === true);
+                var timeStatus = getTimeStatus(m.timeOfDay);
+                var statusLabel, statusCls;
+
+                if (taken) {
+                    statusLabel = 'Taken';
+                    statusCls = 'status-taken';
+                } else {
+                    statusLabel = timeStatus.label;
+                    statusCls = timeStatus.cls;
+                }
+
+                return '<div class="reminder-row">' +
+                    '<div class="reminder-time-col">' + (m.timeOfDay || '--:--') + '</div>' +
+                    '<div class="reminder-info-col">' +
+                    '<div class="reminder-name">' + esc(m.name) + '</div>' +
+                    '<div class="reminder-meta">' + esc(m.dosage) + ' \u00b7 ' + esc(m.frequency) + '</div>' +
+                    '</div>' +
+                    '<div class="reminder-badge ' + statusCls + '">' + statusLabel + '</div>' +
+                    '</div>';
+            }).join('');
+        }
+
         function renderNav() {
             const pages = [
+                { label: 'Dashboard', href: '/dashboard.html' },
                 { label: 'Report', href: '/report.html' },
                 { label: 'Medicines', href: '/medicines.html' },
                 { label: 'Disease', href: '/history.html' }
@@ -175,6 +274,8 @@
 
         renderNav();
         loadMedicines();
+        loadPhone();
     </script>
+    <script src="reminder.js"></script>
 </body>
 </html>

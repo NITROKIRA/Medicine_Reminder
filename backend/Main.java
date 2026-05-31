@@ -4,6 +4,8 @@ import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.Duration;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -18,6 +20,8 @@ public class Main {
     private static final Map<String, Integer> medicineIdCounter = new ConcurrentHashMap<>();
     private static final Map<String, List<DiseaseHistory>> userHistory = new ConcurrentHashMap<>();
     private static final Map<String, Integer> historyIdCounter = new ConcurrentHashMap<>();
+    private static final Map<String, String> userPhoneNumbers = new ConcurrentHashMap<>();
+    private static final Map<String, Set<Integer>> sentRemindersToday = new ConcurrentHashMap<>();
     private static final Random rand = new Random();
 
     public static void main(String[] args) throws IOException {
@@ -35,6 +39,9 @@ public class Main {
         server.createContext("/api/medicines", new MedicinesHandler());
         server.createContext("/api/history", new HistoryHandler());
         server.createContext("/api/logout", new LogoutHandler());
+        server.createContext("/api/phone", new PhoneHandler());
+        server.createContext("/api/pending-reminders", new PendingRemindersHandler());
+        server.createContext("/api/remaining", new RemainingHandler());
 
         server.setExecutor(null);
         server.start();
@@ -115,6 +122,11 @@ public class Main {
                                 if (id > maxId) medicineIdCounter.put(username, id);
                             } catch (NumberFormatException ignored) {}
                         }
+                    } else if (line.startsWith("P|")) {
+                        String[] parts = line.split("\\|", 2);
+                        if (parts.length >= 2) {
+                            userPhoneNumbers.put(username, parts[1].trim());
+                        }
                     } else if (line.startsWith("D|")) {
                         String[] parts = line.split("\\|");
                         if (parts.length >= 4) {
@@ -163,6 +175,11 @@ public class Main {
                     bw.write("D|" + h.id + "|" + h.diseaseName + "|" + h.diseaseType + "|" + h.status + "|" + h.startDate + "|" + h.endDate + "|" + h.notes);
                     bw.newLine();
                 }
+            }
+            String phone = userPhoneNumbers.get(username);
+            if (phone != null && !phone.isEmpty()) {
+                bw.write("P|" + phone);
+                bw.newLine();
             }
         } catch (IOException e) {
             System.err.println("Error saving patient data for " + username + ": " + e.getMessage());
@@ -625,6 +642,131 @@ public class Main {
 
             sendJson(exchange, 405, "{\"success\":false,\"message\":\"Method not allowed\"}");
         }
+    }
+
+    static class PhoneHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            String username = getSessionUser(exchange);
+            if (username == null) {
+                sendJson(exchange, 200, "{\"success\":false,\"message\":\"Not logged in\"}");
+                return;
+            }
+
+            if ("GET".equals(exchange.getRequestMethod())) {
+                String phone = userPhoneNumbers.getOrDefault(username, "");
+                sendJson(exchange, 200, "{\"success\":true,\"phone\":\"" + escapeJson(phone) + "\"}");
+                return;
+            }
+
+            if ("POST".equals(exchange.getRequestMethod())) {
+                String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+                Map<String, String> params = parseFormData(body);
+                String phone = params.getOrDefault("phone", "").trim();
+                userPhoneNumbers.put(username, phone);
+                savePatientData(username);
+                sendJson(exchange, 200, "{\"success\":true}");
+                return;
+            }
+
+            sendJson(exchange, 405, "{\"success\":false,\"message\":\"Method not allowed\"}");
+        }
+    }
+
+    static class PendingRemindersHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            String username = getSessionUser(exchange);
+            if (username == null) {
+                sendJson(exchange, 200, "{\"success\":false,\"message\":\"Not logged in\"}");
+                return;
+            }
+
+            List<Medicine> pending = getPendingReminders(username);
+            StringBuilder sb = new StringBuilder();
+            sb.append("{\"success\":true,\"reminders\":[");
+            for (int i = 0; i < pending.size(); i++) {
+                if (i > 0) sb.append(",");
+                Medicine m = pending.get(i);
+                sb.append("{\"id\":\"").append(m.id).append("\"");
+                sb.append(",\"name\":\"").append(escapeJson(m.name)).append("\"");
+                sb.append(",\"dosage\":\"").append(escapeJson(m.dosage)).append("\"");
+                sb.append(",\"timeOfDay\":\"").append(escapeJson(m.timeOfDay)).append("\"");
+                sb.append("}");
+            }
+            sb.append("]}");
+            sendJson(exchange, 200, sb.toString());
+        }
+    }
+
+    static class RemainingHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            String username = getSessionUser(exchange);
+            if (username == null) {
+                sendJson(exchange, 200, "{\"success\":false,\"message\":\"Not logged in\"}");
+                return;
+            }
+
+            List<Medicine> meds = userMedicines.getOrDefault(username, new ArrayList<>());
+            List<Medicine> remaining = new ArrayList<>();
+            int takenCount = 0;
+            for (Medicine m : meds) {
+                if (m.active) {
+                    remaining.add(m);
+                } else {
+                    takenCount++;
+                }
+            }
+
+            StringBuilder sb = new StringBuilder();
+            sb.append("{\"success\":true,\"total\":" + meds.size());
+            sb.append(",\"taken\":" + takenCount);
+            sb.append(",\"remaining\":" + remaining.size());
+            sb.append(",\"medicines\":[");
+            for (int i = 0; i < remaining.size(); i++) {
+                if (i > 0) sb.append(",");
+                Medicine m = remaining.get(i);
+                sb.append("{\"id\":\"").append(m.id).append("\"");
+                sb.append(",\"name\":\"").append(escapeJson(m.name)).append("\"");
+                sb.append(",\"dosage\":\"").append(escapeJson(m.dosage)).append("\"");
+                sb.append(",\"frequency\":\"").append(escapeJson(m.frequency)).append("\"");
+                sb.append(",\"timeOfDay\":\"").append(escapeJson(m.timeOfDay)).append("\"");
+                sb.append(",\"active\":").append(m.active);
+                sb.append("}");
+            }
+            sb.append("]}");
+            sendJson(exchange, 200, sb.toString());
+        }
+    }
+
+    private static List<Medicine> getPendingReminders(String username) {
+        List<Medicine> meds = userMedicines.getOrDefault(username, new ArrayList<>());
+        List<Medicine> pending = new ArrayList<>();
+        LocalTime now = LocalTime.now();
+        LocalDate today = LocalDate.now();
+
+        Set<Integer> sentToday = sentRemindersToday.getOrDefault(username, new HashSet<>());
+
+        for (Medicine m : meds) {
+            if (!m.active) continue;
+            if (m.timeOfDay == null || m.timeOfDay.isEmpty()) continue;
+            if (sentToday.contains(m.id)) continue;
+
+            try {
+                LocalTime medTime = LocalTime.parse(m.timeOfDay);
+                long diff = Duration.between(now, medTime).toMinutes();
+                if (diff >= 0 && diff <= 15) {
+                    pending.add(m);
+                    sentToday.add(m.id);
+                }
+            } catch (Exception e) {
+                // Skip invalid time format
+            }
+        }
+
+        sentRemindersToday.put(username, sentToday);
+        return pending;
     }
 
     static class LogoutHandler implements HttpHandler {

@@ -12,6 +12,8 @@
             <h1>Medicine Reminder</h1>
             <h2>Welcome, <span id="usernameDisplay">User</span>!</h2>
             <p class="info-text">Your health profile has been saved successfully.</p>
+            <div id="reminderAlerts"></div>
+
             <div class="dashboard-info">
                 <h3>Your Recorded Conditions</h3>
                 <div id="healthInfo">
@@ -19,7 +21,22 @@
                     <p><strong>Acute Diseases:</strong> <span id="acuteDisplay">-</span></p>
                 </div>
             </div>
+
+            <div class="upcoming-section">
+                <h3>Today's Schedule</h3>
+                <div id="todayMeds">
+                    <p style="color:#888;font-size:14px">Loading...</p>
+                </div>
+            </div>
+
+            <div class="remainder-section">
+                <h3>Remainders</h3>
+                <div id="remainderProgress" class="remainder-progress"></div>
+                <div id="remainderList"></div>
+            </div>
+
             <div class="report-actions">
+                <button onclick="window.location.href='/medicines.html'">Manage Medicines</button>
                 <button onclick="window.location.href='/report.html'">View Reports</button>
                 <button class="btn-secondary" onclick="logout()">Logout</button>
             </div>
@@ -42,13 +59,135 @@
             }
         }
 
+        function getTimeStatus(timeOfDay) {
+            if (!timeOfDay) return { label: 'No time set', cls: 'status-unscheduled', urgent: false };
+            var parts = timeOfDay.split(':');
+            var medMin = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+            var now = new Date();
+            var nowMin = now.getHours() * 60 + now.getMinutes();
+            var diff = medMin - nowMin;
+
+            if (diff < 0) return { label: 'Missed', cls: 'status-missed', urgent: true };
+            if (diff === 0) return { label: 'Due Now', cls: 'status-due', urgent: true };
+            if (diff <= 15) return { label: 'Due in ' + diff + 'm', cls: 'status-due', urgent: true };
+            if (diff < 60) return { label: 'In ' + diff + 'm', cls: 'status-upcoming', urgent: false };
+            var h = Math.floor(diff / 60);
+            var m = diff % 60;
+            return { label: h + 'h ' + m + 'm left', cls: 'status-scheduled', urgent: false };
+        }
+
+        function escHtml(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+
+        function renderUpcomingReminders(medicines, containerId) {
+            var container = document.getElementById(containerId);
+            if (!medicines || medicines.length === 0) {
+                container.innerHTML = '<div class="reminder-empty">No medicines added yet.</div>';
+                return;
+            }
+
+            var withTime = medicines.filter(function(m) { return m.timeOfDay; });
+            var withoutTime = medicines.filter(function(m) { return !m.timeOfDay; });
+            withTime.sort(function(a, b) { return a.timeOfDay.localeCompare(b.timeOfDay); });
+
+            var allMeds = withTime.concat(withoutTime);
+
+            container.innerHTML = allMeds.map(function(m) {
+                var taken = !(m.active === 'true' || m.active === true);
+                var timeStatus = getTimeStatus(m.timeOfDay);
+                var statusLabel, statusCls;
+
+                if (taken) {
+                    statusLabel = 'Taken';
+                    statusCls = 'status-taken';
+                } else {
+                    statusLabel = timeStatus.label;
+                    statusCls = timeStatus.cls;
+                }
+
+                return '<div class="reminder-row">' +
+                    '<div class="reminder-time-col">' + (m.timeOfDay || '--:--') + '</div>' +
+                    '<div class="reminder-info-col">' +
+                    '<div class="reminder-name">' + escHtml(m.name) + '</div>' +
+                    '<div class="reminder-meta">' + escHtml(m.dosage) + ' \u00b7 ' + escHtml(m.frequency) + '</div>' +
+                    '</div>' +
+                    '<div class="reminder-badge ' + statusCls + '">' + statusLabel + '</div>' +
+                    '</div>';
+            }).join('');
+        }
+
+        async function loadTodayMeds() {
+            try {
+                var res = await fetch('/api/medicines');
+                var data = await res.json();
+                if (!data.success) return;
+                renderUpcomingReminders(data.medicines, 'todayMeds');
+            } catch (e) {}
+        }
+
         function logout() {
             fetch('/api/logout').then(() => {
                 window.location.href = '/index.html';
             });
         }
 
+        async function loadRemainder() {
+            try {
+                var res = await fetch('/api/remaining');
+                var data = await res.json();
+                if (!data.success) return;
+                renderRemainder(data);
+            } catch (e) {}
+        }
+
+        function renderRemainder(data) {
+            var progressDiv = document.getElementById('remainderProgress');
+            var listDiv = document.getElementById('remainderList');
+
+            if (data.total === 0) {
+                progressDiv.innerHTML = '<div class="remainder-empty">No medicines added.</div>';
+                listDiv.innerHTML = '';
+                return;
+            }
+
+            var pct = data.total > 0 ? Math.round(data.taken / data.total * 100) : 0;
+            progressDiv.innerHTML =
+                '<div class="remainder-summary">' +
+                '<span class="remainder-count">' + data.remaining + ' remaining</span>' +
+                '<span class="remainder-taken">' + data.taken + ' of ' + data.total + ' taken</span>' +
+                '</div>' +
+                '<div class="progress-bar"><div class="progress-fill" style="width:' + pct + '%"></div></div>';
+
+            if (data.remaining === 0) {
+                listDiv.innerHTML = '<div class="remainder-done">All medicines taken today!</div>';
+                return;
+            }
+
+            listDiv.innerHTML = data.medicines.map(function(m) {
+                return '<div class="remainder-item">' +
+                    '<div class="remainder-item-info">' +
+                    '<div class="remainder-item-time">' + (m.timeOfDay || '--:--') + '</div>' +
+                    '<div class="remainder-item-name">' + escHtml(m.name) + '</div>' +
+                    '<div class="remainder-item-meta">' + escHtml(m.dosage) + ' \u00b7 ' + escHtml(m.frequency) + '</div>' +
+                    '</div>' +
+                    '<button class="remainder-take-btn" onclick="markTaken(\'' + m.id + '\')">Take</button>' +
+                    '</div>';
+            }).join('');
+        }
+
+        async function markTaken(id) {
+            await fetch('/api/medicines', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'action=toggle&id=' + id + '&active=false'
+            });
+            loadRemainder();
+            loadTodayMeds();
+        }
+
         loadDashboard();
+        loadTodayMeds();
+        loadRemainder();
     </script>
+    <script src="reminder.js"></script>
 </body>
 </html>
