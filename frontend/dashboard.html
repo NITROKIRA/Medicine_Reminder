@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medicine Reminder - Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="form-box dashboard-box">
+            <h1>Medicine Reminder</h1>
+            <h2>Welcome, <span id="usernameDisplay">User</span>!</h2>
+            <p class="info-text">Your health profile has been saved successfully.</p>
+            <div class="dashboard-info">
+                <h3>Your Recorded Conditions</h3>
+                <div id="healthInfo">
+                    <p><strong>Chronic Diseases:</strong> <span id="chronicDisplay">-</span></p>
+                    <p><strong>Acute Diseases:</strong> <span id="acuteDisplay">-</span></p>
+                </div>
+            </div>
+            <div class="report-actions">
+                <button onclick="window.location.href='/report.html'">View Reports</button>
+                <button class="btn-secondary" onclick="logout()">Logout</button>
+            </div>
+        </div>
+    </div>
+    <script>
+        async function loadDashboard() {
+            try {
+                const res = await fetch('/api/dashboard-data');
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById('usernameDisplay').textContent = data.username;
+                    document.getElementById('chronicDisplay').textContent = data.chronic || 'None';
+                    document.getElementById('acuteDisplay').textContent = data.acute || 'None';
+                } else {
+                    window.location.href = '/index.html';
+                }
+            } catch (err) {
+                window.location.href = '/index.html';
+            }
+        }
+
+        function logout() {
+            fetch('/api/logout').then(() => {
+                window.location.href = '/index.html';
+            });
+        }
+
+        loadDashboard();
+    </script>
+</body>
+</html>

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medicine Reminder - Sign Up</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="form-box">
+            <h1>Medicine Reminder</h1>
+            <h2>Sign Up</h2>
+            <form id="signupForm">
+                <div class="input-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" required>
+                </div>
+                <div class="input-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <div class="input-group">
+                    <label for="confirmPassword">Confirm Password</label>
+                    <input type="password" id="confirmPassword" name="confirmPassword" required>
+                </div>
+                <button type="submit">Sign Up</button>
+                <p class="error" id="signupError"></p>
+            </form>
+            <p class="link-text">Already have an account? <a href="index.html">Login</a></p>
+        </div>
+    </div>
+    <script>
+        document.getElementById('signupForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            const error = document.getElementById('signupError');
+
+            if (password !== confirmPassword) {
+                error.textContent = 'Passwords do not match';
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/signup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password)
+                });
+                const data = await res.json();
+                if (data.success) {
+                    window.location.href = '/index.html?registered=1';
+                } else {
+                    error.textContent = data.message || 'Signup failed';
+                }
+            } catch (err) {
+                error.textContent = 'Server error. Please try again.';
+            }
+        });
+    </script>
+</body>
+</html>

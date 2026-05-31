@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medicine Reminder - Diseases</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="has-nav">
+    <nav class="nav" id="nav"></nav>
+    <div class="container med-container">
+        <div class="form-box med-box">
+            <h1>Medicine Reminder</h1>
+            <h2>Diseases</h2>
+            <p class="info-text">Keep track of diseases you've had — past and present. Add new diseases below and mark them as cured once resolved.</p>
+
+            <div class="add-med-section">
+                <h3>Add Disease Record</h3>
+                <form id="historyForm" class="med-form">
+                    <div class="med-field">
+                        <label>Disease Name <span class="required">*</span></label>
+                        <input type="text" id="diseaseName" placeholder="e.g. Diabetes, Flu" required>
+                    </div>
+                    <div class="med-form-row">
+                        <div class="med-field">
+                            <label>Type</label>
+                            <select id="diseaseType">
+                                <option value="Chronic">Chronic</option>
+                                <option value="Acute">Acute</option>
+                            </select>
+                        </div>
+                        <div class="med-field">
+                            <label>Status <span class="required">*</span></label>
+                            <select id="diseaseStatus" required>
+                                <option value="">Select...</option>
+                                <option value="Not Cured">Not Cured (Active)</option>
+                                <option value="Cured">Cured (Past)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="med-form-row">
+                        <div class="med-field">
+                            <label>Start Date</label>
+                            <input type="date" id="historyStart">
+                        </div>
+                        <div class="med-field">
+                            <label>End Date <span class="optional">(if cured)</span></label>
+                            <input type="date" id="historyEnd">
+                        </div>
+                    </div>
+                    <div class="med-field">
+                        <label>Notes <span class="optional">(optional)</span></label>
+                        <input type="text" id="historyNotes" placeholder="e.g. Treated with antibiotics">
+                    </div>
+                    <button type="submit">Add Record</button>
+                </form>
+                <p class="error" id="historyError"></p>
+            </div>
+
+            <div class="history-filters">
+                <button class="filter-btn active" data-filter="all" onclick="setFilter('all')">All</button>
+                <button class="filter-btn" data-filter="notcured" onclick="setFilter('notcured')">Not Cured</button>
+                <button class="filter-btn" data-filter="cured" onclick="setFilter('cured')">Cured</button>
+            </div>
+
+            <div id="historyList" class="history-list"></div>
+
+            <div class="report-actions" style="margin-top:16px">
+                <button class="btn-secondary" onclick="logout()">Logout</button>
+            </div>
+        </div>
+    </div>
+    <script>
+        let currentFilter = 'all';
+
+        async function loadHistory() {
+            try {
+                const res = await fetch('/api/history');
+                const data = await res.json();
+                if (!data.success) {
+                    window.location.href = '/index.html';
+                    return;
+                }
+                renderHistory(data.history);
+            } catch (err) {
+                window.location.href = '/index.html';
+            }
+        }
+
+        function renderHistory(records) {
+            const container = document.getElementById('historyList');
+            if (!records || records.length === 0) {
+                container.innerHTML = '<div class="med-empty">No disease records yet.<br>Add your first record above.</div>';
+                return;
+            }
+            const filtered = currentFilter === 'all' ? records : records.filter(r => {
+                const s = (r.status || '').toLowerCase();
+                return currentFilter === 'cured' ? s === 'cured' : s !== 'cured';
+            });
+            if (filtered.length === 0) {
+                container.innerHTML = '<div class="med-empty">No records match this filter.</div>';
+                return;
+            }
+            container.innerHTML = filtered.map(r => {
+                const cured = (r.status || '').toLowerCase() === 'cured';
+                return '<div class="hist-card ' + (cured ? 'cured' : 'active') + '">' +
+                    '<div class="hist-indicator"></div>' +
+                    '<div class="hist-info">' +
+                    '<div class="hist-name">' + esc(r.diseaseName) + '</div>' +
+                    '<div class="hist-meta">' +
+                    '<span class="hist-type">' + esc(r.diseaseType || 'Chronic') + '</span>' +
+                    '<span class="hist-status ' + (cured ? 'hist-cured' : 'hist-active') + '">' +
+                    (cured ? 'Cured' : 'Not Cured') + '</span>' +
+                    '</div>' +
+                    '<div class="hist-dates">' +
+                    (r.startDate ? esc(r.startDate) : 'Unknown start') +
+                    (r.endDate ? ' &rarr; ' + esc(r.endDate) : '') +
+                    '</div>' +
+                    (r.notes ? '<div class="hist-notes">' + esc(r.notes) + '</div>' : '') +
+                    '</div>' +
+                    '<div class="hist-actions">' +
+                    (cured
+                        ? '<button class="med-btn med-btn-untake" onclick="toggleStatus(\'' + r.id + '\', \'Not Cured\')">Mark Active</button>'
+                        : '<button class="med-btn med-btn-take" onclick="toggleStatus(\'' + r.id + '\', \'Cured\')">Mark Cured</button>') +
+                    '<button class="med-btn med-btn-delete" onclick="deleteRecord(\'' + r.id + '\')">Delete</button>' +
+                    '</div></div>';
+            }).join('');
+        }
+
+        function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+
+        function setFilter(filter) {
+            currentFilter = filter;
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b.dataset.filter === filter));
+            loadHistory();
+        }
+
+        async function toggleStatus(id, status) {
+            await fetch('/api/history', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'action=toggle&id=' + id + '&status=' + encodeURIComponent(status)
+            });
+            loadHistory();
+        }
+
+        async function deleteRecord(id) {
+            if (!confirm('Delete this record?')) return;
+            await fetch('/api/history', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'action=delete&id=' + id
+            });
+            loadHistory();
+        }
+
+        document.getElementById('historyForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const diseaseName = document.getElementById('diseaseName').value;
+            const diseaseType = document.getElementById('diseaseType').value;
+            const diseaseStatus = document.getElementById('diseaseStatus').value;
+            const startDate = document.getElementById('historyStart').value;
+            const endDate = document.getElementById('historyEnd').value;
+            const notes = document.getElementById('historyNotes').value;
+            const error = document.getElementById('historyError');
+
+            if (!diseaseName || !diseaseStatus) {
+                error.textContent = 'Disease name and status are required';
+                return;
+            }
+
+            const res = await fetch('/api/history', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'action=add&diseaseName=' + encodeURIComponent(diseaseName) +
+                      '&diseaseType=' + encodeURIComponent(diseaseType) +
+                      '&status=' + encodeURIComponent(diseaseStatus) +
+                      '&startDate=' + encodeURIComponent(startDate) +
+                      '&endDate=' + encodeURIComponent(endDate) +
+                      '&notes=' + encodeURIComponent(notes)
+            });
+            const data = await res.json();
+            if (data.success) {
+                error.textContent = '';
+                document.getElementById('historyForm').reset();
+                loadHistory();
+            } else {
+                error.textContent = data.message || 'Failed to add record';
+            }
+        });
+
+        function logout() {
+            fetch('/api/logout').then(() => { window.location.href = '/index.html'; });
+        }
+
+        function renderNav() {
+            const pages = [
+                { label: 'Report', href: '/report.html' },
+                { label: 'Medicines', href: '/medicines.html' },
+                { label: 'Disease', href: '/history.html' }
+            ];
+            const current = window.location.pathname;
+            document.getElementById('nav').innerHTML =
+                '<div class="nav-inner">' +
+                '<a href="/report.html" class="nav-logo">Medicine Reminder</a>' +
+                '<ul class="nav-links">' +
+                pages.map(p => '<li><a href="' + p.href + '" class="' + (current === p.href ? 'active' : '') + '">' + p.label + '</a></li>').join('') +
+                '<li><button class="nav-logout" onclick="logout()">Logout</button></li>' +
+                '</ul></div>';
+        }
+
+        renderNav();
+        loadHistory();
+    </script>
+</body>
+</html>

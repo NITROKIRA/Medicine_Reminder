@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medicine Reminder - Health Report</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body class="has-nav">
+    <nav class="nav" id="nav"></nav>
+    <div class="container report-container">
+        <div class="form-box report-box">
+            <h1>Medicine Reminder</h1>
+            <h2>Your Health Report</h2>
+            <p class="info-text" id="greeting">Welcome! Here are your latest health readings.</p>
+
+            <div class="chart-grid">
+                <div class="chart-card">
+                    <h3>Blood Pressure</h3>
+                    <canvas id="bpChart"></canvas>
+                    <div class="reading-summary" id="bpSummary"></div>
+                </div>
+                <div class="chart-card">
+                    <h3>Sugar Level</h3>
+                    <canvas id="sugarChart"></canvas>
+                    <div class="reading-summary" id="sugarSummary"></div>
+                </div>
+                <div class="chart-card">
+                    <h3>Heart Rate</h3>
+                    <canvas id="heartChart"></canvas>
+                    <div class="reading-summary" id="heartSummary"></div>
+                </div>
+            </div>
+
+            <div class="add-reading-section">
+                <h3>Add New Reading</h3>
+                <form id="readingForm" class="reading-form">
+                    <div class="reading-inputs">
+                        <div class="reading-field">
+                            <label>Systolic (mmHg)</label>
+                            <input type="number" id="systolic" placeholder="120" min="60" max="250" required>
+                        </div>
+                        <div class="reading-field">
+                            <label>Diastolic (mmHg)</label>
+                            <input type="number" id="diastolic" placeholder="80" min="40" max="160" required>
+                        </div>
+                        <div class="reading-field">
+                            <label>Sugar (mg/dL)</label>
+                            <input type="number" id="sugar" placeholder="100" min="30" max="500" required>
+                        </div>
+                        <div class="reading-field">
+                            <label>Heart Rate (bpm)</label>
+                            <input type="number" id="heartRate" placeholder="72" min="30" max="220" required>
+                        </div>
+                    </div>
+                    <button type="submit">Add Reading</button>
+                </form>
+                <p class="error" id="readingError"></p>
+            </div>
+
+            <div class="report-actions">
+                <button class="btn-secondary" onclick="logout()">Logout</button>
+            </div>
+        </div>
+    </div>
+    <script>
+        let bpChartInstance, sugarChartInstance, heartChartInstance;
+
+        async function loadReport() {
+            try {
+                const res = await fetch('/api/report-data');
+                const data = await res.json();
+                if (!data.success) {
+                    window.location.href = '/index.html';
+                    return;
+                }
+                document.getElementById('greeting').textContent = 'Hello, ' + data.username + '! Here are your latest health readings.';
+                renderCharts(data);
+                renderSummary(data);
+            } catch (err) {
+                window.location.href = '/index.html';
+            }
+        }
+
+        function renderCharts(data) {
+            const labels = data.labels;
+            const colors = {
+                systolic: 'rgba(231, 76, 60, 0.8)',
+                diastolic: 'rgba(52, 152, 219, 0.8)',
+                sugar: 'rgba(46, 204, 113, 0.8)',
+                heart: 'rgba(155, 89, 182, 0.8)'
+            };
+
+            if (bpChartInstance) bpChartInstance.destroy();
+            bpChartInstance = new Chart(document.getElementById('bpChart'), {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Systolic',
+                        data: data.systolic,
+                        borderColor: colors.systolic,
+                        backgroundColor: colors.systolic.replace('0.8', '0.1'),
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 4
+                    }, {
+                        label: 'Diastolic',
+                        data: data.diastolic,
+                        borderColor: colors.diastolic,
+                        backgroundColor: colors.diastolic.replace('0.8', '0.1'),
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 4
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { position: 'top' } }, scales: { y: { beginAtZero: false } } }
+            });
+
+            if (sugarChartInstance) sugarChartInstance.destroy();
+            sugarChartInstance = new Chart(document.getElementById('sugarChart'), {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Blood Sugar',
+                        data: data.sugar,
+                        borderColor: colors.sugar,
+                        backgroundColor: colors.sugar.replace('0.8', '0.1'),
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 4
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: false } } }
+            });
+
+            if (heartChartInstance) heartChartInstance.destroy();
+            heartChartInstance = new Chart(document.getElementById('heartChart'), {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Heart Rate',
+                        data: data.heartRate,
+                        borderColor: colors.heart,
+                        backgroundColor: colors.heart.replace('0.8', '0.1'),
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 4
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: false } } }
+            });
+        }
+
+        function renderSummary(data) {
+            const avg = arr => arr.length ? (arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1) : '-';
+            document.getElementById('bpSummary').innerHTML =
+                'Avg: <strong>' + avg(data.systolic) + '/' + avg(data.diastolic) + '</strong> mmHg';
+            document.getElementById('sugarSummary').innerHTML =
+                'Avg: <strong>' + avg(data.sugar) + '</strong> mg/dL';
+            document.getElementById('heartSummary').innerHTML =
+                'Avg: <strong>' + avg(data.heartRate) + '</strong> bpm';
+        }
+
+        document.getElementById('readingForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const systolic = document.getElementById('systolic').value;
+            const diastolic = document.getElementById('diastolic').value;
+            const sugar = document.getElementById('sugar').value;
+            const heartRate = document.getElementById('heartRate').value;
+            const error = document.getElementById('readingError');
+
+            try {
+                const res = await fetch('/api/add-reading', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'systolic=' + systolic + '&diastolic=' + diastolic + '&sugar=' + sugar + '&heartRate=' + heartRate
+                });
+                const data = await res.json();
+                if (data.success) {
+                    error.textContent = '';
+                    document.getElementById('readingForm').reset();
+                    loadReport();
+                } else {
+                    error.textContent = data.message || 'Failed to save reading';
+                }
+            } catch (err) {
+                error.textContent = 'Server error';
+            }
+        });
+
+        function logout() {
+            fetch('/api/logout').then(() => { window.location.href = '/index.html'; });
+        }
+
+        function renderNav() {
+            const pages = [
+                { label: 'Report', href: '/report.html' },
+                { label: 'Medicines', href: '/medicines.html' },
+                { label: 'Disease', href: '/history.html' }
+            ];
+            const current = window.location.pathname;
+            document.getElementById('nav').innerHTML =
+                '<div class="nav-inner">' +
+                '<a href="/report.html" class="nav-logo">Medicine Reminder</a>' +
+                '<ul class="nav-links">' +
+                pages.map(p => '<li><a href="' + p.href + '" class="' + (current === p.href ? 'active' : '') + '">' + p.label + '</a></li>').join('') +
+                '<li><button class="nav-logout" onclick="logout()">Logout</button></li>' +
+                '</ul></div>';
+        }
+
+        renderNav();
+        loadReport();
+    </script>
+</body>
+</html>

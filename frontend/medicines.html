@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medicine Reminder - Medicines</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="has-nav">
+    <nav class="nav" id="nav"></nav>
+    <div class="container med-container">
+        <div class="form-box med-box">
+            <h1>Medicine Reminder</h1>
+            <h2>Medication Reminders</h2>
+
+            <div class="add-med-section">
+                <h3>Add New Medicine</h3>
+                <form id="medForm" class="med-form">
+                    <div class="med-field">
+                        <label>Medicine Name <span class="required">*</span></label>
+                        <input type="text" id="medName" placeholder="e.g. Metformin" required>
+                    </div>
+                    <div class="med-form-row">
+                        <div class="med-field">
+                            <label>Dosage <span class="required">*</span></label>
+                            <input type="text" id="medDosage" placeholder="e.g. 500mg, 1 tablet" required>
+                        </div>
+                        <div class="med-field">
+                            <label>Frequency <span class="required">*</span></label>
+                            <select id="medFrequency" required>
+                                <option value="">Select...</option>
+                                <option value="Once daily">Once daily</option>
+                                <option value="Twice daily">Twice daily</option>
+                                <option value="Three times daily">Three times daily</option>
+                                <option value="Four times daily">Four times daily</option>
+                                <option value="Every other day">Every other day</option>
+                                <option value="Weekly">Weekly</option>
+                                <option value="As needed">As needed</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="med-form-row">
+                        <div class="med-field">
+                            <label>Time <span class="required">*</span></label>
+                            <input type="time" id="medTime" required>
+                        </div>
+                        <div class="med-field">
+                            <label>Duration</label>
+                            <div class="med-form-row" style="gap:8px;grid-template-columns:1fr 1fr">
+                                <input type="date" id="medStart">
+                                <input type="date" id="medEnd">
+                            </div>
+                        </div>
+                    </div>
+                    <button type="submit">Add Medicine</button>
+                </form>
+                <p class="error" id="medError"></p>
+            </div>
+
+            <h3 style="text-align:center;color:#444;font-size:16px;margin-bottom:16px">Your Medicines</h3>
+            <div id="medList" class="med-list"></div>
+
+            <div class="report-actions" style="margin-top:16px">
+                <button class="btn-secondary" onclick="logout()">Logout</button>
+            </div>
+        </div>
+    </div>
+    <script>
+        async function loadMedicines() {
+            try {
+                const res = await fetch('/api/medicines');
+                const data = await res.json();
+                if (!data.success) {
+                    window.location.href = '/index.html';
+                    return;
+                }
+                renderMedicines(data.medicines);
+            } catch (err) {
+                window.location.href = '/index.html';
+            }
+        }
+
+        function renderMedicines(medicines) {
+            const container = document.getElementById('medList');
+            if (!medicines || medicines.length === 0) {
+                container.innerHTML = '<div class="med-empty">No medicines added yet.<br>Add your first medication above.</div>';
+                return;
+            }
+            container.innerHTML = medicines.map(m => {
+                const active = m.active === 'true' || m.active === true;
+                return '<div class="med-card ' + (active ? '' : 'inactive') + '">' +
+                    '<div class="med-info">' +
+                    '<div class="med-name">' + esc(m.name) + '</div>' +
+                    '<div class="med-details">' +
+                    esc(m.dosage) + ' &middot; ' + esc(m.frequency) +
+                    (m.timeOfDay ? ' &middot; At ' + esc(m.timeOfDay) : '') +
+                    (m.startDate ? '<br>From: ' + esc(m.startDate) + (m.endDate ? ' to ' + esc(m.endDate) : '') : '') +
+                    '</div></div>' +
+                    '<div class="med-actions">' +
+                    (active
+                        ? '<button class="med-btn med-btn-take" onclick="toggleMedicine(\'' + m.id + '\', false)">Taken</button>'
+                        : '<button class="med-btn med-btn-untake" onclick="toggleMedicine(\'' + m.id + '\', true)">Not Taken</button>') +
+                    '<button class="med-btn med-btn-delete" onclick="deleteMedicine(\'' + m.id + '\')">Delete</button>' +
+                    '</div></div>';
+            }).join('');
+        }
+
+        function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+
+        async function toggleMedicine(id, active) {
+            await fetch('/api/medicines', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'action=toggle&id=' + id + '&active=' + active
+            });
+            loadMedicines();
+        }
+
+        async function deleteMedicine(id) {
+            if (!confirm('Delete this medicine?')) return;
+            await fetch('/api/medicines', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'action=delete&id=' + id
+            });
+            loadMedicines();
+        }
+
+        document.getElementById('medForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const name = document.getElementById('medName').value;
+            const dosage = document.getElementById('medDosage').value;
+            const frequency = document.getElementById('medFrequency').value;
+            const timeOfDay = document.getElementById('medTime').value;
+            const startDate = document.getElementById('medStart').value;
+            const endDate = document.getElementById('medEnd').value;
+            const error = document.getElementById('medError');
+
+            const res = await fetch('/api/medicines', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'action=add&name=' + encodeURIComponent(name) + '&dosage=' + encodeURIComponent(dosage) +
+                      '&frequency=' + encodeURIComponent(frequency) + '&timeOfDay=' + encodeURIComponent(timeOfDay) +
+                      '&startDate=' + encodeURIComponent(startDate) + '&endDate=' + encodeURIComponent(endDate)
+            });
+            const data = await res.json();
+            if (data.success) {
+                error.textContent = '';
+                document.getElementById('medForm').reset();
+                loadMedicines();
+            } else {
+                error.textContent = data.message || 'Failed to add medicine';
+            }
+        });
+
+        function logout() {
+            fetch('/api/logout').then(() => { window.location.href = '/index.html'; });
+        }
+
+        function renderNav() {
+            const pages = [
+                { label: 'Report', href: '/report.html' },
+                { label: 'Medicines', href: '/medicines.html' },
+                { label: 'Disease', href: '/history.html' }
+            ];
+            const current = window.location.pathname;
+            document.getElementById('nav').innerHTML =
+                '<div class="nav-inner">' +
+                '<a href="/report.html" class="nav-logo">Medicine Reminder</a>' +
+                '<ul class="nav-links">' +
+                pages.map(p => '<li><a href="' + p.href + '" class="' + (current === p.href ? 'active' : '') + '">' + p.label + '</a></li>').join('') +
+                '<li><button class="nav-logout" onclick="logout()">Logout</button></li>' +
+                '</ul></div>';
+        }
+
+        renderNav();
+        loadMedicines();
+    </script>
+</body>
+</html>

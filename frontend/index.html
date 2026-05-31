@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medicine Reminder - Login</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="form-box">
+            <h1>Medicine Reminder</h1>
+            <h2>Login</h2>
+            <form id="loginForm">
+                <div class="input-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" required>
+                </div>
+                <div class="input-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <button type="submit">Login</button>
+                <p class="error" id="loginError"></p>
+            </form>
+            <p class="link-text">Don't have an account? <a href="signup.html">Sign Up</a></p>
+        </div>
+    </div>
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const error = document.getElementById('loginError');
+
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password)
+                });
+                const data = await res.json();
+                if (data.success) {
+                    window.location.href = '/report.html';
+                } else {
+                    error.textContent = data.message || 'Login failed';
+                }
+            } catch (err) {
+                error.textContent = 'Server error. Please try again.';
+            }
+        });
+    </script>
+</body>
+</html>
